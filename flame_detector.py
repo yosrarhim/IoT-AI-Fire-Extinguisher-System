@@ -1,4 +1,7 @@
-"""Real-time flame detection on an ESP32-CAM video stream.
+"""Intelligent fire detection for the IoT-AI Fire Extinguisher System (Embedded x AI).
+
+The vision engine analyses the video of an embedded ESP32-CAM in real time and
+sends its decisions to an embedded ESP32 actuator over MQTT.
 
 Pipeline for each frame:
   1. HSV color segmentation with three flame profiles (white-hot, bright core, dancing tip)

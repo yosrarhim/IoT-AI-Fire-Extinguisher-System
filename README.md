@@ -1,58 +1,68 @@
-# 🔥 IoT Fire Detection & Extinguisher System
+# 🔥 IoT-AI Fire Extinguisher System — Embedded Systems × Computer Vision
 
-Real-time fire detection on an **ESP32-CAM** video stream with **computer vision (OpenCV)**, and automatic activation of a **water pump and alarm** by a second **ESP32** over **MQTT**.
+An **AIoT** project that joins **embedded systems** and **intelligent vision** in one loop: an **ESP32-CAM** sees, a **computer-vision engine** decides, and an **ESP32 actuator** acts by starting a water pump and an alarm over **MQTT**, in real time.
 
 <p align="center">
-  <img src="docs/demo.gif" alt="Fire detected on the laptop, FIRE ALERT and alarm on the robot" width="320">
+  <img src="docs/demo.gif" alt="Fire detected by the vision engine, FIRE ALERT, and alarm triggered on the embedded robot" width="320">
 </p>
 
 🎥 Full demo video: [`demo/demo.mp4`](demo/demo.mp4)
 
 ---
 
+## Embedded × AI at a glance
+
+| | Embedded side | Intelligence side |
+|---|---|---|
+| **Sense** | ESP32-CAM captures and streams video over Wi-Fi | Frames feed the vision engine in real time |
+| **Decide** | Embedded constraints (RAM, CPU, Wi-Fi) shape the architecture | Multi-criteria flame analysis: color, motion, shape, flicker, time |
+| **Act** | ESP32 drives relays → pump and alarm, with hardware fail-safe | The vision decision becomes an MQTT command to the hardware |
+
 ## How it works
 
 ```mermaid
 flowchart LR
-    CAM["ESP32-CAM<br/>MJPEG stream :81"] -- Wi-Fi --> PY["flame_detector.py<br/>OpenCV detection"]
+    CAM["Embedded vision sensor<br/>ESP32-CAM · MJPEG :81"] -- Wi-Fi --> PY["Intelligent detection<br/>flame_detector.py · OpenCV"]
     PY -- "MQTT 'ON' / 'OFF'<br/>topic home/fire" --> BRK[("MQTT broker")]
-    BRK --> ESP["ESP32 actuator<br/>esp32_relay.ino"]
+    BRK --> ESP["Embedded actuator<br/>ESP32 · esp32_relay.ino"]
     ESP --> P["Relay → water pump"]
     ESP --> A["Relay → LED / buzzer"]
 ```
 
-1. **Capture** – the ESP32-CAM streams video over Wi-Fi (`http://<ip>:81/stream`).
-2. **Detect** – `flame_detector.py` analyses every frame on a PC.
-3. **Confirm** – fire must be seen on several consecutive frames before the alarm is raised.
-4. **Act** – the PC publishes `ON` on the MQTT topic `home/fire`; the ESP32 switches the pump and the alarm relays. `OFF` is sent once the fire is gone.
+1. **Embedded capture** – the ESP32-CAM streams video over Wi-Fi (`http://<ip>:81/stream`).
+2. **Intelligent detection** – `flame_detector.py` analyses each frame and recognizes the visual signature of a real flame.
+3. **Smart confirmation** – fire must be seen on several consecutive frames, so the hardware is only triggered by a stable decision.
+4. **Embedded action** – the decision is published as `ON` on the MQTT topic `home/fire`; the ESP32 switches the pump and alarm relays, then `OFF` once the fire is gone.
 
-### Detection pipeline
+### Intelligent vision pipeline, designed for an embedded camera
 
-Fire is detected with classic computer vision, without a neural network, so it runs in real time on a normal laptop:
+The detection engine reasons on several visual features of fire, and each step was chosen to cope with the noisy, low-resolution images of a microcontroller camera:
 
-| Step | What it does | Why |
+| Step | What the intelligence does | Embedded reason |
 |---|---|---|
-| HSV color segmentation | Three flame color profiles: *white-hot*, *bright core*, *dancing tip* | Flames have a specific hue / brightness range |
-| Morphological opening | Removes small noise | Fewer false detections |
-| Background subtraction (MOG2) | Keeps only regions that change | A static orange object is not a fire |
-| Shape analysis | Rejects round blobs (low circularity required) | Lamps and LEDs are round, flames are irregular |
-| Flicker score | Pixel change in the region over the last frames | Real flames flicker |
-| Temporal confirmation | N consecutive fire frames (default 5) | Avoids alarms on a single bad frame |
+| HSV color segmentation | Three tuned flame color profiles: *white-hot*, *bright core*, *dancing tip* | Robust to the ESP32-CAM's auto-exposure and color shifts |
+| Morphological filtering | Removes small noise | ESP32-CAM JPEG compression creates artifacts |
+| Background subtraction (MOG2) | Keeps only regions that change | A static orange object near the robot is not a fire |
+| Shape analysis | Rejects round blobs (low circularity required) | Ignores the robot's own LEDs and lamps |
+| Flicker score | Measures pixel change over the last frames | Real flames flicker, reflections do not |
+| Temporal decision | N consecutive fire frames (default 5) | Protects the pump from a single bad Wi-Fi frame |
 
-### Safety on the actuator side
+### Fail-safe embedded actuation
+
+The AI decides, but the embedded firmware keeps control of safety:
 - Relays start **OFF** at boot.
-- **Auto-off after 60 s** if no new `ON` message arrives (the PC refreshes `ON` every 10 s while fire is visible). If the PC or the network fails, the pump does not stay on forever.
-- Automatic Wi-Fi / MQTT reconnection on both sides.
+- **Auto-off after 60 s** if no new `ON` decision arrives (the vision engine refreshes `ON` every 10 s while fire is visible). If the PC or the network fails, the pump never stays on.
+- Automatic Wi-Fi / MQTT reconnection on both the vision side and the embedded side.
 
-## Hardware
+## Embedded hardware
 
-| Component | Role |
+| Component | Role in the AIoT loop |
 |---|---|
-| ESP32-CAM (AI Thinker) | Video capture and Wi-Fi streaming |
-| ESP32 DevKit | Actuator controller (MQTT subscriber) |
+| ESP32-CAM (AI Thinker) | Embedded vision sensor: captures and streams the images the AI analyses |
+| ESP32 DevKit | Embedded brain of the actuator: turns AI decisions into physical action |
 | 2-channel relay module (active LOW) | Switches the pump and the alarm |
 | Mini water pump + external power supply | Fire suppression |
-| LED / buzzer | Local alarm |
+| LED / buzzer | Local alarm when the AI confirms fire |
 
 ### Wiring (actuator ESP32)
 
@@ -66,19 +76,19 @@ Fire is detected with classic computer vision, without a neural network, so it r
 
 ## Getting started
 
-### 1. ESP32-CAM
-Flash the **CameraWebServer** example from the ESP32 Arduino core (board: *AI Thinker ESP32-CAM*), set your Wi-Fi, and note the IP printed on the serial monitor. The stream is available at `http://<ESP32-CAM-IP>:81/stream`.
+### 1. Embedded camera (ESP32-CAM)
+Flash the **CameraWebServer** example from the ESP32 Arduino core (board: *AI Thinker ESP32-CAM*), set your Wi-Fi, and note the IP printed on the serial monitor. The stream for the vision engine is at `http://<ESP32-CAM-IP>:81/stream`.
 
-### 2. MQTT broker
+### 2. MQTT broker (link between AI and hardware)
 Run any MQTT broker on the PC or the local network, for example [Mosquitto](https://mosquitto.org/):
 ```bash
 mosquitto -v
 ```
 
-### 3. Actuator ESP32
+### 3. Embedded actuator (ESP32)
 Open `esp32_relay.ino` in the Arduino IDE, install the **PubSubClient** library, set `ssid`, `password` and `mqtt_server`, then upload (board: *ESP32 Dev Module*).
 
-### 4. Detection on the PC
+### 4. Intelligent detection engine
 ```bash
 git clone https://github.com/yosrarhim/IoT-AI-Fire-Extinguisher-System.git
 cd IoT-AI-Fire-Extinguisher-System
@@ -91,10 +101,10 @@ Useful options:
 
 | Option | Default | Description |
 |---|---|---|
-| `--stream` | `http://192.168.137.57:81/stream` | Stream URL, or `0` to test with the PC webcam |
-| `--broker` | none | MQTT broker IP (without it, detection runs without sending commands) |
+| `--stream` | `http://192.168.137.57:81/stream` | Embedded camera stream URL, or `0` to test with the PC webcam |
+| `--broker` | none | MQTT broker IP (without it, the AI detects but does not command the hardware) |
 | `--topic` | `home/fire` | Must match `topic_sub` in `esp32_relay.ino` |
-| `--confirm-frames` | `5` | Consecutive fire frames before the alarm |
+| `--confirm-frames` | `5` | Consecutive fire frames before the hardware is triggered |
 | `--clear-seconds` | `5` | Seconds without fire before `OFF` |
 | `--headless` | off | No display windows |
 
@@ -102,29 +112,31 @@ Press `q` to quit.
 
 ## Repository structure
 ```
-├── flame_detector.py   # Fire detection (OpenCV) + MQTT alarm publisher
-├── esp32_relay.ino     # Actuator ESP32: MQTT subscriber, pump + alarm relays
+├── flame_detector.py   # Intelligence: vision-based fire detection + MQTT decisions
+├── esp32_relay.ino     # Embedded: ESP32 actuator firmware, pump + alarm relays, fail-safe
 ├── requirements.txt
-├── demo/demo.mp4       # Full demo video
+├── demo/demo.mp4       # Full demo of the AI + embedded loop
 └── docs/demo.gif
 ```
 
-## Challenges and lessons learned
+## Challenges and lessons learned at the Embedded × AI boundary
 
-- **ESP32-CAM limits.** The ESP32-CAM does not have the memory or compute to run image analysis at a useful frame rate, so it only streams video and the analysis runs on a PC.
-- **False positives.** Color alone triggers on red or orange objects, lamps and reflections. Background subtraction, shape and flicker analysis, plus confirmation over several frames, reduce them a lot.
-- **Unstable stream.** The ESP32-CAM stream drops regularly, so the detector reconnects automatically and uses a 1-frame buffer to stay real time.
-- **Fail-safe actuation.** The pump must never stay on if the PC crashes, hence the 60 s auto-off on the ESP32.
+- **Where should the intelligence run?** The ESP32-CAM does not have the memory or compute to analyse images at a useful frame rate. The architecture splits the work: the embedded camera captures, the vision engine decides, the embedded actuator acts.
+- **Making vision reliable on embedded images.** Color alone triggers on red objects, LEDs and reflections in low-quality camera frames. Combining motion, shape, flicker and temporal confirmation made the decision robust enough to drive real hardware.
+- **Unstable embedded stream.** The ESP32-CAM stream drops regularly, so the vision engine reconnects automatically and keeps a 1-frame buffer to stay real time.
+- **Safety first when AI controls hardware.** A detection error or a PC crash must never leave the pump on: hence the 60 s fail-safe in the ESP32 firmware.
 
-## Future work
+## Next step: Edge AI
 
-- Run a small quantized neural network (e.g. TensorFlow Lite Micro / Edge Impulse on an ESP32-S3) to detect fire directly on the camera board, without the PC.
-- Add flame and temperature sensors on the actuator board to confirm fire locally.
+- Train a small neural network and run it quantized **directly on the microcontroller** (TensorFlow Lite Micro / Edge Impulse on an ESP32-S3), so the embedded board detects fire itself without the PC.
+- Fuse vision with embedded **flame and temperature sensors** for multi-sensor AI decisions.
 - Dashboard and mobile notifications.
 
 ## Tech stack
 
-`Python` · `OpenCV` · `NumPy` · `MQTT (paho-mqtt, PubSubClient)` · `C/C++ (Arduino)` · `ESP32` · `ESP32-CAM` · `Wi-Fi`
+**Embedded:** `ESP32` · `ESP32-CAM` · `C/C++ (Arduino)` · `PubSubClient` · `Relays` · `Wi-Fi`
+**Intelligence:** `Python` · `OpenCV` · `NumPy` · `Computer vision`
+**Connectivity:** `MQTT` · `paho-mqtt`
 
 ## Author
 

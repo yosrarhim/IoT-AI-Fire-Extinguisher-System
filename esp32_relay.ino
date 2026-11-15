@@ -1,5 +1,7 @@
 // esp32_relay.ino
-// ESP32 MQTT subscriber to control a pump and an LED (via relays)
+// Embedded actuator of the IoT-AI Fire Extinguisher System:
+// receives the fire decisions of the vision engine (flame_detector.py) over MQTT
+// and drives the pump and the alarm through relays, with a hardware fail-safe.
 // Author: Yosra Rhim
 // Wiring:
 //  - RELAY_PUMP to GPIO 13
