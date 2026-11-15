@@ -59,7 +59,9 @@ flowchart LR
 | Network | 13 convolutional layers, 2 detection heads (13×13 and 26×26 grids), ~8.7 M parameters |
 | Input | 416 × 416 RGB, from the ESP32-CAM stream |
 | Inference | OpenCV DNN on CPU, no deep-learning framework needed at run time |
-| Training | Darknet, transfer learning from YOLOv3-Tiny – see [`docs/TRAINING.md`](docs/TRAINING.md) |
+| Training | Darknet on GPU, transfer learning from YOLOv3-Tiny – [Colab notebook](notebooks/train_yolov3_tiny_fire.ipynb) · [`docs/TRAINING.md`](docs/TRAINING.md) |
+
+Train the model in one click: [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/yosrarhim/IoT-AI-Fire-Extinguisher-System/blob/main/notebooks/train_yolov3_tiny_fire.ipynb)
 
 YOLOv3-Tiny was chosen over full YOLOv3 because the system must react in real time on a laptop CPU from a low-resolution embedded camera: the Tiny version keeps the speed while still localizing the flame in the image.
 
@@ -155,6 +157,7 @@ Press `q` to quit.
 │   └── fire.data               # Darknet training config
 ├── esp32_relay.ino             # Embedded: ESP32 actuator firmware, pump + alarm relays, fail-safe
 ├── docs/TRAINING.md            # How to train the YOLOv3-Tiny fire model
+├── notebooks/train_yolov3_tiny_fire.ipynb  # Colab: train + evaluate YOLOv3-Tiny (mAP)
 ├── requirements.txt
 ├── demo/demo.mp4       # Full demo of the AI + embedded loop
 └── docs/demo.gif

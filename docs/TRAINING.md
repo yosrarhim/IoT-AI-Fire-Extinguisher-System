@@ -3,6 +3,8 @@
 The detector uses a **1-class YOLOv3-Tiny** (`fire`) defined in [`models/yolov3-tiny-fire.cfg`](../models/yolov3-tiny-fire.cfg).
 Training produces `yolov3-tiny-fire.weights`, which `flame_detector.py` loads with OpenCV DNN.
 
+> **Fastest way:** open [`notebooks/train_yolov3_tiny_fire.ipynb`](../notebooks/train_yolov3_tiny_fire.ipynb) in Google Colab (free GPU) and run all cells. The steps below explain what it does.
+
 ## 1. Dataset
 
 - Collect fire images in YOLO format (one `.txt` label per image, class `0` = fire), for example from public fire datasets on Roboflow Universe or Kaggle.
