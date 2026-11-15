@@ -1,6 +1,6 @@
 // esp32_relay.ino
 // ESP32 MQTT subscriber to control a pump and an LED (via relays)
-// Author: Anis Hassen (example)
+// Author: Yosra Rhim
 // Wiring:
 //  - RELAY_PUMP to GPIO 13
 //  - RELAY_LED  to GPIO 12
