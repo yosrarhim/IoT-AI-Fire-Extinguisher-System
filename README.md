@@ -181,4 +181,4 @@ Press `q` to quit.
 
 ## Author
 
-**Yosra Rhim** – Embedded Systems & AI Engineer · [LinkedIn](https://www.linkedin.com/in/yosrarrhim) · [GitHub](https://github.com/yosrarhim)
+**Yosra Rhim** – Embedded Systems & AI Engineer · [LinkedIn](https://www.linkedin.com/in/rhim-yosra-135a51251) · [GitHub](https://github.com/yosrarhim)
