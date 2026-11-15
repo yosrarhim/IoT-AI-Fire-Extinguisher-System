@@ -4,3 +4,9 @@ __pycache__/
 venv/
 .vscode/
 .DS_Store
+# Training outputs and datasets
+backup/
+data/images/
+data/labels/
+*.weights
+!models/*.weights

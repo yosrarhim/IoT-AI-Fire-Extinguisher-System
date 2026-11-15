@@ -3,18 +3,25 @@
 The vision engine analyses the video of an embedded ESP32-CAM in real time and
 sends its decisions to an embedded ESP32 actuator over MQTT.
 
-Pipeline for each frame:
-  1. HSV color segmentation with three flame profiles (white-hot, bright core, dancing tip)
-  2. Morphological opening + background subtraction (MOG2) to keep only moving bright regions
-  3. Contour analysis: area, circularity (flames are irregular) and flicker/motion score
-  4. Temporal confirmation: fire must be seen on N consecutive frames before an alert
+Two-stage AI pipeline for each frame:
+  Stage 1 - YOLOv3-Tiny (yolo_fire.py): a CNN object detector proposes fire boxes.
+  Stage 2 - Vision confirmation (this file):
+      a. HSV color segmentation with three flame profiles (white-hot, bright core, dancing tip)
+      b. Morphological opening + background subtraction (MOG2): only moving bright regions
+      c. Contour analysis: area, circularity (flames are irregular) and flicker/motion score
+  Decision (hybrid mode): a YOLO box is accepted when the vision stage confirms a real,
+  flickering flame inside it, or when YOLO is very confident on its own.
+  Temporal confirmation: fire must be seen on N consecutive frames before an alert.
+
+Modes: --mode hybrid (default when YOLO weights are given), --mode yolo, --mode vision.
 
 When fire is confirmed, "ON" is published on the MQTT topic read by the ESP32 actuator
 board (esp32_relay.ino), which starts the pump and the alarm. "OFF" is sent once the
 fire has not been seen for a while.
 
 Usage:
-    python flame_detector.py --stream http://<ESP32-CAM-IP>:81/stream --broker <BROKER-IP>
+    python flame_detector.py --stream http://<ESP32-CAM-IP>:81/stream --broker <BROKER-IP> \
+        --yolo-weights models/yolov3-tiny-fire.weights
 """
 
 import argparse
@@ -136,7 +143,7 @@ class FlameDetector:
         return None
 
     def process_frame(self, frame):
-        """Return (annotated frame, flame mask, fire_detected) for one frame."""
+        """Return (annotated frame, flame mask, confirmed flame boxes) for one frame."""
         self.frame_buffer.append(frame.copy())
         hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
         flame_mask = self.get_flame_mask(frame)
@@ -145,7 +152,7 @@ class FlameDetector:
         flame_mask = cv2.bitwise_and(flame_mask, self.bg_subtractor.apply(frame))
         contours, _ = cv2.findContours(flame_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         output_frame = frame.copy()
-        fire_detected = False
+        flame_boxes = []
 
         for cnt in contours:
             flame_type = self.is_real_flame(cnt, hsv)
@@ -160,13 +167,28 @@ class FlameDetector:
             cv2.rectangle(output_frame, (x, y), (x + w, y + h), color, 2)
             cv2.putText(output_frame, label, (x, y - 10),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
-            fire_detected = True
+            flame_boxes.append((x, y, w, h))
 
-        if fire_detected:
-            cv2.putText(output_frame, "!!! FIRE ALERT !!!", (50, 50),
-                        cv2.FONT_HERSHEY_SIMPLEX, 1.2, (0, 0, 255), 3)
+        return output_frame, flame_mask, flame_boxes
 
-        return output_frame, flame_mask, fire_detected
+
+def boxes_overlap(a, b):
+    ax, ay, aw, ah = a
+    bx, by, bw, bh = b
+    return ax < bx + bw and bx < ax + aw and ay < by + bh and by < ay + ah
+
+
+def decide(mode, yolo_boxes, flame_boxes, high_conf):
+    """Fuse the CNN detections and the vision confirmation into one fire decision."""
+    if mode == "vision":
+        return len(flame_boxes) > 0
+    if mode == "yolo":
+        return len(yolo_boxes) > 0
+    # hybrid: YOLO proposes, vision confirms (or YOLO alone when very confident)
+    for box, conf in yolo_boxes:
+        if conf >= high_conf or any(boxes_overlap(box, fb) for fb in flame_boxes):
+            return True
+    return False
 
 
 class FireAlarm:
@@ -236,11 +258,28 @@ def main():
     parser.add_argument("--clear-seconds", type=float, default=5.0,
                         help="Seconds without fire before sending OFF")
     parser.add_argument("--headless", action="store_true", help="Do not open display windows")
+    parser.add_argument("--mode", choices=["hybrid", "yolo", "vision"], default=None,
+                        help="hybrid = YOLOv3-Tiny + vision confirmation (default with weights), "
+                             "vision = OpenCV pipeline only (default without weights)")
+    parser.add_argument("--yolo-cfg", default="models/yolov3-tiny-fire.cfg")
+    parser.add_argument("--yolo-weights", default=None, help="Trained YOLOv3-Tiny fire weights")
+    parser.add_argument("--yolo-conf", type=float, default=0.4, help="YOLO confidence threshold")
+    parser.add_argument("--yolo-high-conf", type=float, default=0.8,
+                        help="In hybrid mode, accept YOLO alone above this confidence")
     args = parser.parse_args()
 
     stream = int(args.stream) if args.stream.isdigit() else args.stream
     print(f"Starting flame detection on {stream}")
     detector = FlameDetector(stream)
+
+    mode = args.mode or ("hybrid" if args.yolo_weights else "vision")
+    yolo = None
+    if mode in ("hybrid", "yolo"):
+        if not args.yolo_weights:
+            parser.error(f"--mode {mode} needs --yolo-weights (see docs/TRAINING.md)")
+        from yolo_fire import YoloV3TinyFireDetector
+        yolo = YoloV3TinyFireDetector(args.yolo_cfg, args.yolo_weights, conf_threshold=args.yolo_conf)
+    print(f"Detection mode: {mode}")
     alarm = FireAlarm(args.broker, args.port, args.topic, args.confirm_frames, args.clear_seconds)
 
     try:
@@ -248,7 +287,14 @@ def main():
             frame = detector.read_frame()
             if frame is None:
                 continue
-            result_frame, flame_mask, fire_detected = detector.process_frame(frame)
+            result_frame, flame_mask, flame_boxes = detector.process_frame(frame)
+            yolo_boxes = yolo.detect(frame) if yolo else []
+            if yolo:
+                yolo.draw(result_frame, yolo_boxes)
+            fire_detected = decide(mode, yolo_boxes, flame_boxes, args.yolo_high_conf)
+            if fire_detected:
+                cv2.putText(result_frame, "!!! FIRE ALERT !!!", (50, 50),
+                            cv2.FONT_HERSHEY_SIMPLEX, 1.2, (0, 0, 255), 3)
             alarm.update(fire_detected)
 
             if not args.headless:
